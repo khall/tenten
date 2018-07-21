@@ -1,43 +1,36 @@
 require_relative 'instruction'
 require_relative 'nil_instruction'
+require_relative 'stack'
 
 # A computer with a set of instructions defined by ruby lambdas
 # stack contains all instructions and data
 # program_counter is a stack index pointing to the next instruction to execute
-# stack_pointer points to the next empty data location. stack_pointer - 1 (last_data_index) gets the last piece of data
+# stack_pointer points to the last piece of data. stack_pointer - 1 is where the stack pointer initially begins
 class Computer
-  attr_reader :instructions, :program_counter, :stack, :stack_pointer, :stack_size
+  attr_reader :instructions, :stack
 
   def initialize(stack_size)
-    @stack_size = stack_size
-    # TODO: make this array an actual stack that utilizes a stack pointer so we can pop and push easier
-    @stack = Array.new(stack_size) { nil_instruction }
+    @stack = Stack.new(stack_size)
     load_instructions
   end
 
   def set_address(address)
-    @program_counter = address
+    stack.program_counter = address
     self
   end
 
   def insert(command, argument = nil)
-    @stack[program_counter] = find_instruction(command, argument)
-    @program_counter += 1
-
-    # set stack pointer to the location following the largest instruction
-    @stack_pointer = program_counter if stack_pointer.nil? || program_counter > stack_pointer
-    raise 'stack overflow during insertion' if program_counter > stack_size || stack_pointer > stack_size
+    @stack.push_instruction(find_instruction(command, argument))
     self
   end
 
   def execute
+    # puts "PC: #{program_counter} -- SP: #{stack_pointer} -- stack: #{stack}"
     return if cannot_execute?
 
-    while program_counter < stack_size && stack_pointer <= stack_size
-      instruction = stack[program_counter]
-      return if instruction.name == 'STOP'
+    while no_overflow?
+      instruction = stack.read_instruction
       instruction.code.call(instruction.argument)
-      @program_counter += 1
     end
 
     raise 'stack overflow'
@@ -52,8 +45,6 @@ class Computer
       'PRINT' => Instruction.new('PRINT', print_code),
       'PUSH' => Instruction.new('PUSH', push_code),
       'RET' => Instruction.new('RET', ret_code),
-      # TODO: This STOP instruction would work but then the tests get more complicated, so for now let's leave the
-      # "break if STOP" code in #execute
       'STOP' => Instruction.new('STOP', stop_code),
       'NOP' => nil_instruction
     }
@@ -67,43 +58,34 @@ class Computer
   end
 
   def nil_instruction
-    @nil_instruction ||= NilInstruction.new
+    NilInstruction.instance
   end
 
   def call_code
-    ->(arg) { @program_counter = arg - 1 }
+    ->(arg) { stack.program_counter = arg - 1 }
   end
 
   def mult_code
     lambda do |_arg|
-      @stack[stack_pointer - 2] = stack[last_data_index] * stack[stack_pointer - 2]
-      @stack[last_data_index] = nil_instruction
-      @stack_pointer -= 1
+      stack.push_data(stack.pop_data * stack.pop_data)
     end
   end
 
   def print_code
     lambda do |_arg|
-      puts stack[last_data_index]
-      @stack[last_data_index] = nil_instruction
-      @stack_pointer -= 1
+      puts stack.pop_data
     end
   end
 
   def push_code
     lambda do |arg|
-      # we allow stack_pointer to reach 100, but you can't write there
-      raise 'stack overflow' if stack_pointer >= stack_size
-      @stack[stack_pointer] = arg
-      @stack_pointer += 1
+      stack.push_data(arg)
     end
   end
 
   def ret_code
     lambda do |_arg|
-      @program_counter = stack[last_data_index] - 1
-      stack[last_data_index] = nil_instruction
-      @stack_pointer -= 1
+      stack.program_counter = stack.pop_data
     end
   end
 
@@ -116,10 +98,10 @@ class Computer
   end
 
   def cannot_execute?
-    program_counter.nil? || stack_pointer.nil?
+    stack.program_counter.nil? || stack.stack_pointer.nil?
   end
 
-  def stack_overflow?
-    program_counter > stack_size || stack_pointer > stack_size
+  def no_overflow?
+    stack.program_counter < stack.size && stack.stack_pointer <= stack.size
   end
 end

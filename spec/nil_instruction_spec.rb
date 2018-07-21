@@ -1,7 +1,7 @@
 require 'nil_instruction'
 
 RSpec.describe NilInstruction do
-  let(:nil_instruction) { NilInstruction.new }
+  let(:nil_instruction) { NilInstruction.instance }
 
   describe 'constructor' do
     it 'takes a name, number of arguments, stack, program_counter, code to execute' do
